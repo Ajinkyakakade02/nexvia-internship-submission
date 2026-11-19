@@ -1,0 +1,35 @@
+{
+  "name": "fs-01-marketplace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-Vendor E-Commerce Marketplace — Nexvia Technologies FS-01",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "test": "npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test:backend": "npm run test --workspace=backend",
+    "test:frontend": "npm run test --workspace=frontend",
+    "test:e2e": "npx playwright test",
+    "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
+    "seed": "npm run seed --workspace=backend",
+    "seed:admin": "npm run seed:admin --workspace=backend",
+    "docker:up": "docker compose -f infrastructure/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infrastructure/docker-compose.yml down",
+    "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
+
