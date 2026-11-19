@@ -17,12 +17,12 @@ const envSchema = z.object({
   DATABASE_URL: z
     .string()
     .default(
-      'postgresql://neondb_owner:npg_VRmS2DyeXW5P@ep-broad-water-a1ks0ls4-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&pgbouncer=true&connect_timeout=30'
+      'postgresql://postgres:postgres@localhost:5432/fs01_marketplace?schema=public'
     ),
   DIRECT_URL: z
     .string()
     .default(
-      'postgresql://neondb_owner:npg_VRmS2DyeXW5P@ep-broad-water-a1ks0ls4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'
+      'postgresql://postgres:postgres@localhost:5432/fs01_marketplace?schema=public'
     ),
   DB_PROVIDER: z.string().default('prisma'),
 
@@ -34,7 +34,7 @@ const envSchema = z.object({
   REDIS_URL: z
     .string()
     .default(
-      'rediss://default:gQAAAAAAAyuWAAIgcDI3OWRhMzNkOWJlMWI0NTI2YTg2ZDVmMjY5MWQwMzMxNg@absolute-possum-207766.upstash.io:6379'
+      'redis://localhost:6379'
     ),
 
   ELASTICSEARCH_URL: z.string().default('http://localhost:9200'),
