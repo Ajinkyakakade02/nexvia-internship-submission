@@ -1,0 +1,486 @@
+// ============================================================
+// NexMart FS-01 — Refined Relational PostgreSQL + Prisma Schema
+// ============================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ------------------------------------------------------------
+// Enums
+// ------------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
+enum OrderStatus {
+  PLACED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum OnboardingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum TransferStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SIMULATION
+}
+
+// ------------------------------------------------------------
+// Core User & Authentication
+// ------------------------------------------------------------
+
+model User {
+  id                   String        @id @default(uuid()) @db.Uuid
+  name                 String        @db.VarChar(120)
+  email                String        @unique @db.VarChar(255)
+  passwordHash         String        @db.VarChar(255)
+  role                 UserRole      @default(CUSTOMER)
+  phone                String?       @db.VarChar(30)
+  avatar               String?       @db.Text
+  isActive             Boolean       @default(true)
+  resetPasswordToken   String?       @db.VarChar(255)
+  resetPasswordExpires DateTime?
+  createdAt            DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime      @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  vendorProfile        VendorProfile?
+  addresses            Address[]
+  cart                 Cart?
+  orders               Order[]
+  reviews              Review[]
+  couponRedemptions    CouponUsage[]
+  auditLogs            AuditLog[]
+
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Address {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName   String   @db.VarChar(120)
+  phone      String   @db.VarChar(30)
+  street     String   @db.Text
+  city       String   @db.VarChar(100)
+  state      String   @db.VarChar(100)
+  postalCode String   @db.VarChar(20)
+  country    String   @default("India") @db.VarChar(100)
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  orders     Order[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ------------------------------------------------------------
+// Vendor Profile & Catalog
+// ------------------------------------------------------------
+
+model VendorProfile {
+  id                      String           @id @default(uuid()) @db.Uuid
+  userId                  String           @unique @db.Uuid
+  user                    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName            String           @db.VarChar(200)
+  businessDescription     String           @db.Text
+  businessEmail           String           @db.VarChar(255)
+  businessPhone           String           @db.VarChar(30)
+  businessAddress         String           @db.Text
+  gstNumber               String?          @db.VarChar(30)
+  onboardingStatus        OnboardingStatus @default(PENDING)
+  adminNotes              String?          @db.Text
+  razorpayLinkedAccountId String?          @db.VarChar(100)
+  approvedAt              DateTime?        @db.Timestamptz(6)
+  rejectedAt              DateTime?        @db.Timestamptz(6)
+  createdAt               DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime         @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  products                Product[]
+  vendorOrders            VendorOrder[]
+  commissions             Commission[]
+  cartItems               CartItem[]
+
+  @@index([onboardingStatus])
+  @@index([businessName])
+  @@map("vendor_profiles")
+}
+
+model Category {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String    @db.VarChar(100)
+  slug         String    @unique @db.VarChar(120)
+  description  String?   @db.Text
+  image        String?   @db.Text
+  isActive     Boolean   @default(true)
+  productCount Int       @default(0)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  products     Product[]
+
+  @@index([isActive])
+  @@map("categories")
+}
+
+model Product {
+  id             String        @id @default(uuid()) @db.Uuid
+  vendorId       String        @db.Uuid
+  vendor         VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  categoryId     String        @db.Uuid
+  category       Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  name           String        @db.VarChar(255)
+  slug           String        @unique @db.VarChar(280)
+  description    String        @db.Text
+  price          Decimal       @db.Decimal(12, 2)
+  comparePrice   Decimal?      @db.Decimal(12, 2)
+  images         String[]      @default([])
+  stock          Int           @default(0)
+  soldCount      Int           @default(0)
+  avgRating      Decimal       @default(0.00) @db.Decimal(3, 2)
+  ratingCount    Int           @default(0)
+  status         ProductStatus @default(DRAFT)
+  isDeleted      Boolean       @default(false)
+  searchKeywords String[]      @default([])
+  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  cartItems      CartItem[]
+  orderItems     VendorOrderItem[]
+  reviews        Review[]
+
+  @@index([vendorId])
+  @@index([categoryId])
+  @@index([status, isDeleted])
+  @@index([price])
+  @@map("products")
+}
+
+// ------------------------------------------------------------
+// Shopping Cart
+// ------------------------------------------------------------
+
+model Cart {
+  id         String     @id @default(uuid()) @db.Uuid
+  customerId String     @unique @db.Uuid
+  customer   User       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  items      CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id         String        @id @default(uuid()) @db.Uuid
+  cartId     String        @db.Uuid
+  cart       Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId  String        @db.Uuid
+  product    Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendorId   String        @db.Uuid
+  vendor     VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  quantity   Int           @default(1)
+  priceAtAdd Decimal       @db.Decimal(12, 2)
+  createdAt  DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @db.Timestamptz(6)
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@index([vendorId])
+  @@map("cart_items")
+}
+
+// ------------------------------------------------------------
+// Orders, Multi-Vendor Sub-Orders & History
+// ------------------------------------------------------------
+
+model Order {
+  id                      String            @id @default(uuid()) @db.Uuid
+  orderNumber             String            @unique @db.VarChar(50)
+  customerId              String            @db.Uuid
+  customer                User              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  shippingAddressId       String?           @db.Uuid
+  shippingAddress         Address?          @relation(fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  shippingAddressSnapshot Json              // Immutable address snapshot for historical records
+  subtotal                Decimal           @db.Decimal(12, 2)
+  discount                Decimal           @default(0.00) @db.Decimal(12, 2)
+  shippingCost            Decimal           @default(0.00) @db.Decimal(12, 2)
+  tax                     Decimal           @default(0.00) @db.Decimal(12, 2)
+  total                   Decimal           @db.Decimal(12, 2)
+  couponId                String?           @db.Uuid
+  coupon                  Coupon?           @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  paymentStatus           PaymentStatus     @default(PENDING)
+  overallStatus           OrderStatus       @default(PLACED)
+  createdAt               DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime          @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  vendorOrders            VendorOrder[]
+  statusHistory           OrderStatusHistory[]
+  payments                Payment[]
+  commissions             Commission[]
+  reviews                 Review[]
+  couponRedemptions       CouponUsage[]
+
+  @@index([customerId])
+  @@index([paymentStatus])
+  @@index([overallStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model VendorOrder {
+  id             String                     @id @default(uuid()) @db.Uuid
+  orderId        String                     @db.Uuid
+  order          Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendorId       String                     @db.Uuid
+  vendor         VendorProfile              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  subtotal       Decimal                    @db.Decimal(12, 2)
+  status         OrderStatus                @default(PLACED)
+  trackingNumber String?                    @db.VarChar(100)
+  trackingUrl    String?                    @db.Text
+  createdAt      DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime                   @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  items          VendorOrderItem[]
+  statusHistory  VendorOrderStatusHistory[]
+  commission     Commission?
+
+  @@unique([orderId, vendorId]) // Guarantees one sub-order per vendor per master order
+  @@index([orderId])
+  @@index([vendorId])
+  @@index([status])
+  @@map("vendor_orders")
+}
+
+model VendorOrderItem {
+  id            String      @id @default(uuid()) @db.Uuid
+  vendorOrderId String      @db.Uuid
+  vendorOrder   VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+  productId     String?     @db.Uuid
+  product       Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name          String      @db.VarChar(255) // Snapshot name
+  price         Decimal     @db.Decimal(12, 2) // Snapshot unit price
+  quantity      Int
+  subtotal      Decimal     @db.Decimal(12, 2)
+  image         String?     @db.Text // Snapshot thumbnail
+
+  @@index([vendorOrderId])
+  @@index([productId])
+  @@map("vendor_order_items")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  changedAt DateTime    @default(now()) @db.Timestamptz(6)
+  changedBy String?     @db.VarChar(150)
+  comment   String?     @db.Text
+
+  @@index([orderId])
+  @@map("order_status_histories")
+}
+
+model VendorOrderStatusHistory {
+  id            String      @id @default(uuid()) @db.Uuid
+  vendorOrderId String      @db.Uuid
+  vendorOrder   VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+  status        OrderStatus
+  changedAt     DateTime    @default(now()) @db.Timestamptz(6)
+  changedBy     String?     @db.VarChar(150)
+  comment       String?     @db.Text
+
+  @@index([vendorOrderId])
+  @@map("vendor_order_status_histories")
+}
+
+// ------------------------------------------------------------
+// Payments & Commissions
+// ------------------------------------------------------------
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  orderId           String        @db.Uuid
+  order             Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  razorpayOrderId   String?       @db.VarChar(120) // Nullable for simulated vs live
+  razorpayPaymentId String?       @db.VarChar(120)
+  razorpaySignature String?       @db.VarChar(255)
+  amount            Decimal       @db.Decimal(12, 2)
+  currency          String        @default("INR") @db.VarChar(10)
+  status            PaymentStatus @default(PENDING)
+  method            String?       @db.VarChar(50) // "card", "upi", "netbanking", "simulation"
+  webhookVerified   Boolean       @default(false)
+  processedAt       DateTime?     @db.Timestamptz(6)
+  createdAt         DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @db.Timestamptz(6)
+
+  @@index([orderId])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
+  @@map("payments")
+}
+
+model Commission {
+  id                 String         @id @default(uuid()) @db.Uuid
+  orderId            String         @db.Uuid
+  order              Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendorOrderId      String         @unique @db.Uuid
+  vendorOrder        VendorOrder    @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+  vendorId           String         @db.Uuid
+  vendor             VendorProfile  @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  grossAmount        Decimal        @db.Decimal(12, 2)
+  commissionPercent  Decimal        @db.Decimal(5, 2)
+  commissionAmount   Decimal        @db.Decimal(12, 2)
+  vendorNetAmount    Decimal        @db.Decimal(12, 2)
+  transferStatus     TransferStatus @default(PENDING)
+  razorpayTransferId String?        @db.VarChar(120)
+  createdAt          DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime       @updatedAt @db.Timestamptz(6)
+
+  @@index([orderId])
+  @@index([vendorId])
+  @@index([transferStatus])
+  @@map("commissions")
+}
+
+// ------------------------------------------------------------
+// Reviews & Coupons
+// ------------------------------------------------------------
+
+model Review {
+  id                 String   @id @default(uuid()) @db.Uuid
+  customerId         String   @db.Uuid
+  customer           User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId          String   @db.Uuid
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderId            String?  @db.Uuid
+  order              Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  rating             Int      @db.SmallInt
+  title              String?  @db.VarChar(150)
+  comment            String   @db.Text
+  isVerifiedPurchase Boolean  @default(false)
+  isApproved         Boolean  @default(true)
+  adminResponse      String?  @db.Text
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([customerId, productId])
+  @@index([productId])
+  @@index([orderId])
+  @@map("reviews")
+}
+
+model Coupon {
+  id            String        @id @default(uuid()) @db.Uuid
+  code          String        @unique @db.VarChar(50)
+  discountType  DiscountType
+  discountValue Decimal       @db.Decimal(12, 2)
+  minOrderValue Decimal       @default(0.00) @db.Decimal(12, 2)
+  maxDiscount   Decimal?      @db.Decimal(12, 2)
+  expiryDate    DateTime      @db.Timestamptz(6)
+  usageLimit    Int?
+  usedCount     Int           @default(0)
+  perUserLimit  Int           @default(1)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @db.Timestamptz(6)
+
+  // Relationships
+  orders        Order[]
+  redemptions   CouponUsage[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("coupons")
+}
+
+model CouponUsage {
+  id       String   @id @default(uuid()) @db.Uuid
+  couponId String   @db.Uuid
+  coupon   Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId   String   @db.Uuid
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId  String   @db.Uuid
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  usedAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  // Non-unique index so a user can redeem the coupon multiple times up to perUserLimit
+  @@index([couponId, userId])
+  @@index([orderId])
+  @@map("coupon_usages")
+}
+
+// ------------------------------------------------------------
+// Audit Logs
+// ------------------------------------------------------------
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  action        String   @db.VarChar(100)
+  performedById String?  @db.Uuid
+  performedBy   User?    @relation(fields: [performedById], references: [id], onDelete: SetNull)
+  targetEntity  String   @db.VarChar(100)
+  targetId      String?  @db.VarChar(100)
+  details       Json?
+  ipAddress     String?  @db.VarChar(45)
+  userAgent     String?  @db.Text
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([performedById])
+  @@index([action])
+  @@index([targetEntity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+

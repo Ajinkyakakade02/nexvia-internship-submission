@@ -1,0 +1,552 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
+-- CreateEnum
+CREATE TYPE "UserRole" AS ENUM ('CUSTOMER', 'VENDOR', 'ADMIN');
+
+-- CreateEnum
+CREATE TYPE "OrderStatus" AS ENUM ('PLACED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED');
+
+-- CreateEnum
+CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'COMPLETED', 'FAILED', 'REFUNDED');
+
+-- CreateEnum
+CREATE TYPE "OnboardingStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED');
+
+-- CreateEnum
+CREATE TYPE "ProductStatus" AS ENUM ('DRAFT', 'ACTIVE', 'INACTIVE');
+
+-- CreateEnum
+CREATE TYPE "DiscountType" AS ENUM ('PERCENTAGE', 'FIXED');
+
+-- CreateEnum
+CREATE TYPE "TransferStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'SIMULATION');
+
+-- CreateTable
+CREATE TABLE "users" (
+    "id" UUID NOT NULL,
+    "name" VARCHAR(120) NOT NULL,
+    "email" VARCHAR(255) NOT NULL,
+    "passwordHash" VARCHAR(255) NOT NULL,
+    "role" "UserRole" NOT NULL DEFAULT 'CUSTOMER',
+    "phone" VARCHAR(30),
+    "avatar" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "resetPasswordToken" VARCHAR(255),
+    "resetPasswordExpires" TIMESTAMP(3),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "addresses" (
+    "id" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "fullName" VARCHAR(120) NOT NULL,
+    "phone" VARCHAR(30) NOT NULL,
+    "street" TEXT NOT NULL,
+    "city" VARCHAR(100) NOT NULL,
+    "state" VARCHAR(100) NOT NULL,
+    "postalCode" VARCHAR(20) NOT NULL,
+    "country" VARCHAR(100) NOT NULL DEFAULT 'India',
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "addresses_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "vendor_profiles" (
+    "id" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "businessName" VARCHAR(200) NOT NULL,
+    "businessDescription" TEXT NOT NULL,
+    "businessEmail" VARCHAR(255) NOT NULL,
+    "businessPhone" VARCHAR(30) NOT NULL,
+    "businessAddress" TEXT NOT NULL,
+    "gstNumber" VARCHAR(30),
+    "onboardingStatus" "OnboardingStatus" NOT NULL DEFAULT 'PENDING',
+    "adminNotes" TEXT,
+    "razorpayLinkedAccountId" VARCHAR(100),
+    "approvedAt" TIMESTAMPTZ(6),
+    "rejectedAt" TIMESTAMPTZ(6),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "vendor_profiles_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "categories" (
+    "id" UUID NOT NULL,
+    "name" VARCHAR(100) NOT NULL,
+    "slug" VARCHAR(120) NOT NULL,
+    "description" TEXT,
+    "image" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "productCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "categories_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "products" (
+    "id" UUID NOT NULL,
+    "vendorId" UUID NOT NULL,
+    "categoryId" UUID NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "slug" VARCHAR(280) NOT NULL,
+    "description" TEXT NOT NULL,
+    "price" DECIMAL(12,2) NOT NULL,
+    "comparePrice" DECIMAL(12,2),
+    "images" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "stock" INTEGER NOT NULL DEFAULT 0,
+    "soldCount" INTEGER NOT NULL DEFAULT 0,
+    "avgRating" DECIMAL(3,2) NOT NULL DEFAULT 0.00,
+    "ratingCount" INTEGER NOT NULL DEFAULT 0,
+    "status" "ProductStatus" NOT NULL DEFAULT 'DRAFT',
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "searchKeywords" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "products_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "carts" (
+    "id" UUID NOT NULL,
+    "customerId" UUID NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "carts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "cart_items" (
+    "id" UUID NOT NULL,
+    "cartId" UUID NOT NULL,
+    "productId" UUID NOT NULL,
+    "vendorId" UUID NOT NULL,
+    "quantity" INTEGER NOT NULL DEFAULT 1,
+    "priceAtAdd" DECIMAL(12,2) NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "cart_items_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "orders" (
+    "id" UUID NOT NULL,
+    "orderNumber" VARCHAR(50) NOT NULL,
+    "customerId" UUID NOT NULL,
+    "shippingAddressId" UUID,
+    "shippingAddressSnapshot" JSONB NOT NULL,
+    "subtotal" DECIMAL(12,2) NOT NULL,
+    "discount" DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    "shippingCost" DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    "tax" DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    "total" DECIMAL(12,2) NOT NULL,
+    "couponId" UUID,
+    "paymentStatus" "PaymentStatus" NOT NULL DEFAULT 'PENDING',
+    "overallStatus" "OrderStatus" NOT NULL DEFAULT 'PLACED',
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "orders_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "vendor_orders" (
+    "id" UUID NOT NULL,
+    "orderId" UUID NOT NULL,
+    "vendorId" UUID NOT NULL,
+    "subtotal" DECIMAL(12,2) NOT NULL,
+    "status" "OrderStatus" NOT NULL DEFAULT 'PLACED',
+    "trackingNumber" VARCHAR(100),
+    "trackingUrl" TEXT,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "vendor_orders_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "vendor_order_items" (
+    "id" UUID NOT NULL,
+    "vendorOrderId" UUID NOT NULL,
+    "productId" UUID,
+    "name" VARCHAR(255) NOT NULL,
+    "price" DECIMAL(12,2) NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "subtotal" DECIMAL(12,2) NOT NULL,
+    "image" TEXT,
+
+    CONSTRAINT "vendor_order_items_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "order_status_histories" (
+    "id" UUID NOT NULL,
+    "orderId" UUID NOT NULL,
+    "status" "OrderStatus" NOT NULL,
+    "changedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "changedBy" VARCHAR(150),
+    "comment" TEXT,
+
+    CONSTRAINT "order_status_histories_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "vendor_order_status_histories" (
+    "id" UUID NOT NULL,
+    "vendorOrderId" UUID NOT NULL,
+    "status" "OrderStatus" NOT NULL,
+    "changedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "changedBy" VARCHAR(150),
+    "comment" TEXT,
+
+    CONSTRAINT "vendor_order_status_histories_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "payments" (
+    "id" UUID NOT NULL,
+    "orderId" UUID NOT NULL,
+    "razorpayOrderId" VARCHAR(120),
+    "razorpayPaymentId" VARCHAR(120),
+    "razorpaySignature" VARCHAR(255),
+    "amount" DECIMAL(12,2) NOT NULL,
+    "currency" VARCHAR(10) NOT NULL DEFAULT 'INR',
+    "status" "PaymentStatus" NOT NULL DEFAULT 'PENDING',
+    "method" VARCHAR(50),
+    "webhookVerified" BOOLEAN NOT NULL DEFAULT false,
+    "processedAt" TIMESTAMPTZ(6),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "payments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "commissions" (
+    "id" UUID NOT NULL,
+    "orderId" UUID NOT NULL,
+    "vendorOrderId" UUID NOT NULL,
+    "vendorId" UUID NOT NULL,
+    "grossAmount" DECIMAL(12,2) NOT NULL,
+    "commissionPercent" DECIMAL(5,2) NOT NULL,
+    "commissionAmount" DECIMAL(12,2) NOT NULL,
+    "vendorNetAmount" DECIMAL(12,2) NOT NULL,
+    "transferStatus" "TransferStatus" NOT NULL DEFAULT 'PENDING',
+    "razorpayTransferId" VARCHAR(120),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "commissions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "reviews" (
+    "id" UUID NOT NULL,
+    "customerId" UUID NOT NULL,
+    "productId" UUID NOT NULL,
+    "orderId" UUID,
+    "rating" SMALLINT NOT NULL,
+    "title" VARCHAR(150),
+    "comment" TEXT NOT NULL,
+    "isVerifiedPurchase" BOOLEAN NOT NULL DEFAULT false,
+    "isApproved" BOOLEAN NOT NULL DEFAULT true,
+    "adminResponse" TEXT,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "reviews_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "coupons" (
+    "id" UUID NOT NULL,
+    "code" VARCHAR(50) NOT NULL,
+    "discountType" "DiscountType" NOT NULL,
+    "discountValue" DECIMAL(12,2) NOT NULL,
+    "minOrderValue" DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    "maxDiscount" DECIMAL(12,2),
+    "expiryDate" TIMESTAMPTZ(6) NOT NULL,
+    "usageLimit" INTEGER,
+    "usedCount" INTEGER NOT NULL DEFAULT 0,
+    "perUserLimit" INTEGER NOT NULL DEFAULT 1,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "coupons_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "coupon_usages" (
+    "id" UUID NOT NULL,
+    "couponId" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "orderId" UUID NOT NULL,
+    "usedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "coupon_usages_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "audit_logs" (
+    "id" UUID NOT NULL,
+    "action" VARCHAR(100) NOT NULL,
+    "performedById" UUID,
+    "targetEntity" VARCHAR(100) NOT NULL,
+    "targetId" VARCHAR(100),
+    "details" JSONB,
+    "ipAddress" VARCHAR(45),
+    "userAgent" TEXT,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+
+-- CreateIndex
+CREATE INDEX "users_role_idx" ON "users"("role");
+
+-- CreateIndex
+CREATE INDEX "users_createdAt_idx" ON "users"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "addresses_userId_idx" ON "addresses"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "vendor_profiles_userId_key" ON "vendor_profiles"("userId");
+
+-- CreateIndex
+CREATE INDEX "vendor_profiles_onboardingStatus_idx" ON "vendor_profiles"("onboardingStatus");
+
+-- CreateIndex
+CREATE INDEX "vendor_profiles_businessName_idx" ON "vendor_profiles"("businessName");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "categories_slug_key" ON "categories"("slug");
+
+-- CreateIndex
+CREATE INDEX "categories_isActive_idx" ON "categories"("isActive");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "products_slug_key" ON "products"("slug");
+
+-- CreateIndex
+CREATE INDEX "products_vendorId_idx" ON "products"("vendorId");
+
+-- CreateIndex
+CREATE INDEX "products_categoryId_idx" ON "products"("categoryId");
+
+-- CreateIndex
+CREATE INDEX "products_status_isDeleted_idx" ON "products"("status", "isDeleted");
+
+-- CreateIndex
+CREATE INDEX "products_price_idx" ON "products"("price");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "carts_customerId_key" ON "carts"("customerId");
+
+-- CreateIndex
+CREATE INDEX "cart_items_cartId_idx" ON "cart_items"("cartId");
+
+-- CreateIndex
+CREATE INDEX "cart_items_vendorId_idx" ON "cart_items"("vendorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "cart_items_cartId_productId_key" ON "cart_items"("cartId", "productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "orders_orderNumber_key" ON "orders"("orderNumber");
+
+-- CreateIndex
+CREATE INDEX "orders_customerId_idx" ON "orders"("customerId");
+
+-- CreateIndex
+CREATE INDEX "orders_paymentStatus_idx" ON "orders"("paymentStatus");
+
+-- CreateIndex
+CREATE INDEX "orders_overallStatus_idx" ON "orders"("overallStatus");
+
+-- CreateIndex
+CREATE INDEX "orders_createdAt_idx" ON "orders"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "vendor_orders_orderId_idx" ON "vendor_orders"("orderId");
+
+-- CreateIndex
+CREATE INDEX "vendor_orders_vendorId_idx" ON "vendor_orders"("vendorId");
+
+-- CreateIndex
+CREATE INDEX "vendor_orders_status_idx" ON "vendor_orders"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "vendor_orders_orderId_vendorId_key" ON "vendor_orders"("orderId", "vendorId");
+
+-- CreateIndex
+CREATE INDEX "vendor_order_items_vendorOrderId_idx" ON "vendor_order_items"("vendorOrderId");
+
+-- CreateIndex
+CREATE INDEX "vendor_order_items_productId_idx" ON "vendor_order_items"("productId");
+
+-- CreateIndex
+CREATE INDEX "order_status_histories_orderId_idx" ON "order_status_histories"("orderId");
+
+-- CreateIndex
+CREATE INDEX "vendor_order_status_histories_vendorOrderId_idx" ON "vendor_order_status_histories"("vendorOrderId");
+
+-- CreateIndex
+CREATE INDEX "payments_orderId_idx" ON "payments"("orderId");
+
+-- CreateIndex
+CREATE INDEX "payments_razorpayOrderId_idx" ON "payments"("razorpayOrderId");
+
+-- CreateIndex
+CREATE INDEX "payments_razorpayPaymentId_idx" ON "payments"("razorpayPaymentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "commissions_vendorOrderId_key" ON "commissions"("vendorOrderId");
+
+-- CreateIndex
+CREATE INDEX "commissions_orderId_idx" ON "commissions"("orderId");
+
+-- CreateIndex
+CREATE INDEX "commissions_vendorId_idx" ON "commissions"("vendorId");
+
+-- CreateIndex
+CREATE INDEX "commissions_transferStatus_idx" ON "commissions"("transferStatus");
+
+-- CreateIndex
+CREATE INDEX "reviews_productId_idx" ON "reviews"("productId");
+
+-- CreateIndex
+CREATE INDEX "reviews_orderId_idx" ON "reviews"("orderId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "reviews_customerId_productId_key" ON "reviews"("customerId", "productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "coupons_code_key" ON "coupons"("code");
+
+-- CreateIndex
+CREATE INDEX "coupons_code_idx" ON "coupons"("code");
+
+-- CreateIndex
+CREATE INDEX "coupons_isActive_idx" ON "coupons"("isActive");
+
+-- CreateIndex
+CREATE INDEX "coupon_usages_couponId_userId_idx" ON "coupon_usages"("couponId", "userId");
+
+-- CreateIndex
+CREATE INDEX "coupon_usages_orderId_idx" ON "coupon_usages"("orderId");
+
+-- CreateIndex
+CREATE INDEX "audit_logs_performedById_idx" ON "audit_logs"("performedById");
+
+-- CreateIndex
+CREATE INDEX "audit_logs_action_idx" ON "audit_logs"("action");
+
+-- CreateIndex
+CREATE INDEX "audit_logs_targetEntity_idx" ON "audit_logs"("targetEntity");
+
+-- CreateIndex
+CREATE INDEX "audit_logs_createdAt_idx" ON "audit_logs"("createdAt");
+
+-- AddForeignKey
+ALTER TABLE "addresses" ADD CONSTRAINT "addresses_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "vendor_profiles" ADD CONSTRAINT "vendor_profiles_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "products" ADD CONSTRAINT "products_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendor_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "products" ADD CONSTRAINT "products_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "categories"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "carts" ADD CONSTRAINT "carts_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "cart_items" ADD CONSTRAINT "cart_items_cartId_fkey" FOREIGN KEY ("cartId") REFERENCES "carts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "cart_items" ADD CONSTRAINT "cart_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "cart_items" ADD CONSTRAINT "cart_items_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendor_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "orders" ADD CONSTRAINT "orders_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "orders" ADD CONSTRAINT "orders_shippingAddressId_fkey" FOREIGN KEY ("shippingAddressId") REFERENCES "addresses"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "orders" ADD CONSTRAINT "orders_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "coupons"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "vendor_orders" ADD CONSTRAINT "vendor_orders_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "vendor_orders" ADD CONSTRAINT "vendor_orders_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendor_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "vendor_order_items" ADD CONSTRAINT "vendor_order_items_vendorOrderId_fkey" FOREIGN KEY ("vendorOrderId") REFERENCES "vendor_orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "vendor_order_items" ADD CONSTRAINT "vendor_order_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_status_histories" ADD CONSTRAINT "order_status_histories_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "vendor_order_status_histories" ADD CONSTRAINT "vendor_order_status_histories_vendorOrderId_fkey" FOREIGN KEY ("vendorOrderId") REFERENCES "vendor_orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "payments" ADD CONSTRAINT "payments_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "commissions" ADD CONSTRAINT "commissions_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "commissions" ADD CONSTRAINT "commissions_vendorOrderId_fkey" FOREIGN KEY ("vendorOrderId") REFERENCES "vendor_orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "commissions" ADD CONSTRAINT "commissions_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendor_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "reviews" ADD CONSTRAINT "reviews_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "reviews" ADD CONSTRAINT "reviews_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "reviews" ADD CONSTRAINT "reviews_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "coupon_usages" ADD CONSTRAINT "coupon_usages_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "coupons"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "coupon_usages" ADD CONSTRAINT "coupon_usages_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "coupon_usages" ADD CONSTRAINT "coupon_usages_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_performedById_fkey" FOREIGN KEY ("performedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
